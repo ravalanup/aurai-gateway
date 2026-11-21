@@ -1,0 +1,67 @@
+# PII handling policy by risk tier (see aurai-docs: governance/risk-tiers.md and data-and-pii-principles.md).
+#
+# Every tier masks PII before a request leaves the platform. Higher tiers widen the entity list,
+# record a flag in the trace, and (T3) refuse requests that contain high-severity identifiers.
+#
+# Fields
+#   mask             entity types replaced with a placeholder such as <EMAIL_ADDRESS>
+#   block            entity types that cause the request to be rejected (checked before masking)
+#   flag             add a pii marker (counts only, never values) to trace metadata
+#   score_threshold  minimum Presidio confidence to act on a finding
+#   on_error         what to do if the analyzer cannot be reached: allow or block
+#
+# Entity names are Presidio entity types.
+
+default_tier: T2
+language: en
+
+entity_groups:
+  # Government and financial identifiers
+  identifiers:
+    - CREDIT_CARD
+    - US_SSN
+    - US_ITIN
+    - US_PASSPORT
+    - US_DRIVER_LICENSE
+    - US_BANK_NUMBER
+    - IBAN_CODE
+    - CRYPTO
+  # Ways to reach a person
+  contact:
+    - EMAIL_ADDRESS
+    - PHONE_NUMBER
+    - IP_ADDRESS
+  # Names and places
+  personal:
+    - PERSON
+    - LOCATION
+
+tiers:
+  T0:
+    description: Personal productivity. Mask government and financial identifiers.
+    mask: [identifiers]
+    block: []
+    flag: false
+    score_threshold: 0.6
+    on_error: allow
+  T1:
+    description: Internal knowledge. Also mask contact details.
+    mask: [identifiers, contact]
+    block: []
+    flag: false
+    score_threshold: 0.5
+    on_error: allow
+  T2:
+    description: Business process. Also mask names and places; record a trace flag.
+    mask: [identifiers, contact, personal]
+    block: []
+    flag: true
+    score_threshold: 0.4
+    on_error: block
+  T3:
+    description: High impact. Reject requests containing identifiers; mask everything else; record a trace flag.
+    mask: [contact, personal]
+    block: [identifiers]
+    flag: true
+    score_threshold: 0.35
+    on_error: block
