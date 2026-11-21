@@ -1,0 +1,11 @@
+# Test and demo files contain synthetic card numbers and SSNs on purpose.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic PII used by tests and the tier demo"
+paths = [
+  '''tests/''',
+  '''examples/demo\.py''',
+  '''docs/.*\.md''',
+]
