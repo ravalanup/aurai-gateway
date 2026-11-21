@@ -1,0 +1,32 @@
+# AWS (EKS). Pair with values from `terraform output` in aurai-infra. Fill in the empty fields.
+global:
+  environment: aws
+
+image:
+  # Push the image to the ECR repository created by aurai-infra, then set the repository and tag.
+  repository: ""
+  pullPolicy: IfNotPresent
+
+database:
+  createIfMissing: true
+
+redis:
+  # ElastiCache primary endpoint
+  host: ""
+
+externalSecrets:
+  enabled: true
+  masterKeyRemoteKey: ""
+  saltKeyRemoteKey: ""
+  providerKeysRemoteKey: ""
+  databaseSecretRemoteKey: ""
+  databaseHost: ""
+
+ingress:
+  enabled: true
+  className: alb
+  host: ""
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTPS":443}]'

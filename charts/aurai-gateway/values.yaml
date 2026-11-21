@@ -1,0 +1,158 @@
+# Default values for the aurai-gateway chart.
+# Environment files (values-local.yaml, values-aws.yaml) override these.
+
+global:
+  environment: local
+
+# Gateway image: the LiteLLM base image plus the aurai_gateway package (see Dockerfile).
+image:
+  repository: aurai-gateway
+  tag: "0.1.0"
+  pullPolicy: IfNotPresent
+
+litellm:
+  replicas: 2
+  port: 4000
+  # Name of the Secret holding master-key, salt-key, database-url, database-admin-url and optional provider keys.
+  # Created by scripts/deploy-local.ps1 locally, and by External Secrets in AWS.
+  existingSecret: litellm-secrets
+
+  # Extra LiteLLM settings merged over the generated config. Used by aurai-workspace to attribute requests
+  # to individual users (see aurai-workspace gateway/). Empty by default.
+  generalSettings: {}
+  extraSettings: {}
+  # Extra environment variables for the LiteLLM container (name/value or valueFrom entries).
+  extraEnv: []
+
+  # Models exposed by the gateway. Aliases are what applications call; they must match
+  # config/model-catalog.yaml (checked by tests). Set enabled: false for providers you do not use.
+  # Provider model names are the only place a vendor model name appears. Confirm them against each
+  # provider's current model list before deploying.
+  models:
+    - alias: aurai-fast
+      model: anthropic/claude-haiku-5-5
+      apiKeyEnv: ANTHROPIC_API_KEY
+      enabled: true
+    - alias: aurai-balanced
+      model: anthropic/claude-sonnet-5-5
+      apiKeyEnv: ANTHROPIC_API_KEY
+      enabled: true
+    - alias: aurai-reasoning
+      model: anthropic/claude-opus-5-5
+      apiKeyEnv: ANTHROPIC_API_KEY
+      enabled: true
+    - alias: aurai-gemini-fast
+      model: gemini/gemini-2.5-flash
+      apiKeyEnv: GEMINI_API_KEY
+      enabled: true
+    - alias: aurai-gemini-pro
+      model: gemini/gemini-2.5-pro
+      apiKeyEnv: GEMINI_API_KEY
+      enabled: true
+    - alias: aurai-openai-mini
+      model: openai/gpt-4o-mini
+      apiKeyEnv: OPENAI_API_KEY
+      enabled: false
+    - alias: aurai-local
+      model: ollama/llama3.2
+      apiBase: ""
+      enabled: false
+    - alias: aurai-embed
+      model: ollama/nomic-embed-text
+      apiBase: ""
+      enabled: false
+
+  # Overrides for individual models, keyed by alias; merged over the matching entry in `models`. Lets an
+  # overlay change one model (for example the embedding model for aurai-knowledge-rag) without repeating the
+  # list. Example:  modelOverrides: { aurai-embed: { model: gemini/gemini-embedding-001, apiKeyEnv: GEMINI_API_KEY, enabled: true } }
+  modelOverrides: {}
+
+  # Fallback order by alias. Each fallback must permit the same risk tiers as its primary
+  # (checked against config/model-catalog.yaml).
+  fallbacks:
+    - aurai-fast: [aurai-gemini-fast]
+    - aurai-balanced: [aurai-gemini-pro]
+    - aurai-reasoning: [aurai-balanced]
+    - aurai-gemini-fast: [aurai-fast]
+    - aurai-gemini-pro: [aurai-balanced]
+
+  routing:
+    numRetries: 2
+    requestTimeoutSeconds: 120
+    cooldownSeconds: 30
+
+  # Response cache in the shared Redis. Only exact repeats are served from cache.
+  cache:
+    enabled: true
+    ttlSeconds: 600
+
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      memory: 2Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Shared data stores from the aurai-infra chart (aurai-system namespace) or AWS (see values-aws.yaml).
+database:
+  name: litellm
+  # Create the database on start-up if it does not exist (needs database-admin-url in the Secret).
+  createIfMissing: true
+  initImage: postgres:16.4
+
+redis:
+  host: redis.aurai-system.svc.cluster.local
+  port: 6379
+
+# Tracing: OTLP/HTTP to the shared OpenTelemetry collector.
+tracing:
+  enabled: true
+  endpoint: http://otel-collector.aurai-system.svc.cluster.local:4318/v1/traces
+  serviceName: aurai-gateway
+
+# Presidio analyzer (PII detection). The gateway calls it over HTTP.
+presidio:
+  image: mcr.microsoft.com/presidio-analyzer:2.2.358
+  replicas: 2
+  port: 3000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 1Gi
+    limits:
+      memory: 3Gi
+
+# PII policy file override. Leave empty to use the policy packaged in the image.
+piiPolicyConfigMap: ""
+
+# AWS: build the Secret from Secrets Manager with the External Secrets Operator.
+externalSecrets:
+  enabled: false
+  storeName: aurai-aws-secrets
+  refreshInterval: 1h
+  masterKeyRemoteKey: ""        # e.g. aurai-prod/litellm/master-key (plain string)
+  saltKeyRemoteKey: ""          # e.g. aurai-prod/litellm/salt-key (plain string)
+  providerKeysRemoteKey: ""     # e.g. aurai-prod/litellm/provider-keys (JSON: anthropic, gemini, openai)
+  databaseSecretRemoteKey: ""   # the RDS-managed master secret ARN (JSON: username, password)
+  databaseHost: ""              # terraform output db_endpoint host
+  databasePort: 5432
+  databaseSslMode: require
+
+networkPolicy:
+  enabled: true
+
+ingress:
+  enabled: false
+  className: alb
+  host: ""
+  annotations: {}

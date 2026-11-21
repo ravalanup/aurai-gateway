@@ -1,0 +1,209 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: litellm
+  labels:
+    {{- include "aurai-gateway.labels" . | nindent 4 }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: litellm
+  labels:
+    {{- include "aurai-gateway.labels" . | nindent 4 }}
+spec:
+  selector:
+    app.kubernetes.io/name: litellm
+  ports:
+    - name: http
+      port: {{ .Values.litellm.port }}
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: litellm
+  labels:
+    app.kubernetes.io/name: litellm
+    {{- include "aurai-gateway.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.litellm.replicas }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 0
+      maxSurge: 1
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: litellm
+        {{- include "aurai-gateway.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include "aurai-gateway.litellmConfig" . | sha256sum }}
+    spec:
+      serviceAccountName: litellm
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      {{- if .Values.database.createIfMissing }}
+      initContainers:
+        - name: create-database
+          image: {{ .Values.database.initImage }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              until pg_isready -d "$DATABASE_ADMIN_URL"; do echo "waiting for postgres"; sleep 2; done
+              psql "$DATABASE_ADMIN_URL" -tAc "SELECT 1 FROM pg_database WHERE datname='{{ .Values.database.name }}'" | grep -q 1 \
+                || psql "$DATABASE_ADMIN_URL" -c 'CREATE DATABASE "{{ .Values.database.name }}"' \
+                || true
+          env:
+            - name: DATABASE_ADMIN_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.litellm.existingSecret }}
+                  key: database-admin-url
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+      {{- end }}
+      containers:
+        - name: litellm
+          image: {{ include "aurai-gateway.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config", "/etc/litellm/config.yaml", "--port", "{{ .Values.litellm.port }}"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.litellm.port }}
+          env:
+            - name: LITELLM_MODE
+              value: PRODUCTION
+            - name: LITELLM_LOG
+              value: INFO
+            - name: LITELLM_MASTER_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.litellm.existingSecret }}, key: master-key}}
+            - name: LITELLM_SALT_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.litellm.existingSecret }}, key: salt-key}}
+            - name: DATABASE_URL
+              valueFrom: {secretKeyRef: {name: {{ .Values.litellm.existingSecret }}, key: database-url}}
+            - name: ANTHROPIC_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.litellm.existingSecret }}, key: anthropic-api-key, optional: true}}
+            - name: GEMINI_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.litellm.existingSecret }}, key: gemini-api-key, optional: true}}
+            - name: OPENAI_API_KEY
+              valueFrom: {secretKeyRef: {name: {{ .Values.litellm.existingSecret }}, key: openai-api-key, optional: true}}
+            - name: REDIS_HOST
+              value: {{ .Values.redis.host | quote }}
+            - name: REDIS_PORT
+              value: {{ .Values.redis.port | quote }}
+            - name: PRESIDIO_ANALYZER_URL
+              value: http://presidio-analyzer:{{ .Values.presidio.port }}
+            {{- if .Values.piiPolicyConfigMap }}
+            - name: AURAI_PII_POLICY
+              value: /etc/aurai/pii.yaml
+            {{- end }}
+            {{- with .Values.litellm.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+            {{- if .Values.tracing.enabled }}
+            - name: OTEL_EXPORTER
+              value: otlp_http
+            - name: OTEL_ENDPOINT
+              value: {{ .Values.tracing.endpoint | quote }}
+            - name: OTEL_SERVICE_NAME
+              value: {{ .Values.tracing.serviceName | quote }}
+            {{- end }}
+          readinessProbe:
+            httpGet:
+              path: /health/readiness
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 20
+            timeoutSeconds: 5
+          startupProbe:
+            httpGet:
+              path: /health/liveliness
+              port: http
+            failureThreshold: 30
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.litellm.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: config
+              mountPath: /etc/litellm
+              readOnly: true
+            {{- if .Values.piiPolicyConfigMap }}
+            - name: pii-policy
+              mountPath: /etc/aurai
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: litellm-config
+        {{- if .Values.piiPolicyConfigMap }}
+        - name: pii-policy
+          configMap:
+            name: {{ .Values.piiPolicyConfigMap }}
+        {{- end }}
+{{- if .Values.autoscaling.enabled }}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: litellm
+  labels:
+    {{- include "aurai-gateway.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: litellm
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+{{- end }}
+{{- if .Values.podDisruptionBudget.enabled }}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: litellm
+  labels:
+    {{- include "aurai-gateway.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: litellm
+{{- end }}

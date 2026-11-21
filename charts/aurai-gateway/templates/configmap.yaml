@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: litellm-config
+  labels:
+    {{- include "aurai-gateway.labels" . | nindent 4 }}
+data:
+  config.yaml: |
+    {{- include "aurai-gateway.litellmConfig" . | nindent 4 }}
+  # LiteLLM loads the guardrail from this file, which sits next to config.yaml.
+  custom_guardrail.py: |
+    from aurai_gateway.guardrail import AuraiPIIGuardrail
+
+    __all__ = ["AuraiPIIGuardrail"]

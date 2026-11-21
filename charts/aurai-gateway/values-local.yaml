@@ -1,0 +1,27 @@
+# Local kind cluster. Create the Secret first with scripts/deploy-local.ps1.
+global:
+  environment: local
+
+litellm:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      memory: 1536Mi
+
+autoscaling:
+  enabled: false
+
+podDisruptionBudget:
+  enabled: false
+
+presidio:
+  replicas: 1
+  resources:
+    requests:
+      cpu: 100m
+      memory: 768Mi
+    limits:
+      memory: 2Gi

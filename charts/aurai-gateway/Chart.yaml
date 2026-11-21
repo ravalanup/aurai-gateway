@@ -1,0 +1,6 @@
+apiVersion: v2
+name: aurai-gateway
+description: Aurai AI gateway - LiteLLM proxy with a tiered PII guardrail (Presidio), model routing, budgets and tracing
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
