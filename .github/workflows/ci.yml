@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        # litellm[proxy] lets the guardrail wrapper tests run against the real base class
+        run: pip install -e ".[dev]" "litellm[proxy]"
+
+      - name: Lint
+        run: |
+          ruff check .
+          ruff format --check .
+
+      - name: Validate team policy against the model catalog
+        run: aurai-teamctl validate teams/teams.yaml
+
+      - name: Tests
+        run: pytest -q

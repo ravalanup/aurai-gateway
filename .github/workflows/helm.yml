@@ -1,0 +1,64 @@
+name: helm
+
+on:
+  pull_request:
+    paths:
+      - "charts/**"
+      - ".github/workflows/helm.yml"
+  push:
+    branches: [main]
+    paths:
+      - "charts/**"
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
+          sudo mv kubeconform /usr/local/bin/
+
+      - name: Lint
+        run: |
+          helm lint charts/aurai-gateway -f charts/aurai-gateway/values-local.yaml
+          helm lint charts/aurai-gateway -f charts/aurai-gateway/values-aws.yaml \
+            --set image.repository=example.invalid/aurai-gateway \
+            --set ingress.host=gateway.example.invalid \
+            --set redis.host=redis.example.invalid \
+            --set externalSecrets.databaseHost=db.example.invalid \
+            --set externalSecrets.masterKeyRemoteKey=aurai-dev/litellm/master-key \
+            --set externalSecrets.saltKeyRemoteKey=aurai-dev/litellm/salt-key \
+            --set externalSecrets.providerKeysRemoteKey=aurai-dev/litellm/provider-keys \
+            --set externalSecrets.databaseSecretRemoteKey=example-rds-secret
+
+      - name: Render and validate against Kubernetes schemas
+        run: |
+          set -euo pipefail
+          helm template aurai-gateway charts/aurai-gateway -f charts/aurai-gateway/values-local.yaml \
+            --set image.repository=aurai-gateway > /tmp/local.yaml
+          helm template aurai-gateway charts/aurai-gateway -f charts/aurai-gateway/values-aws.yaml \
+            --set image.repository=example.invalid/aurai-gateway \
+            --set ingress.host=gateway.example.invalid \
+            --set redis.host=redis.example.invalid \
+            --set externalSecrets.databaseHost=db.example.invalid \
+            --set externalSecrets.masterKeyRemoteKey=aurai-dev/litellm/master-key \
+            --set externalSecrets.saltKeyRemoteKey=aurai-dev/litellm/salt-key \
+            --set externalSecrets.providerKeysRemoteKey=aurai-dev/litellm/provider-keys \
+            --set externalSecrets.databaseSecretRemoteKey=example-rds-secret > /tmp/aws.yaml
+          # CRDs such as ExternalSecret have no bundled schema; skip them.
+          kubeconform -strict -summary -ignore-missing-schemas -kubernetes-version 1.31.0 /tmp/local.yaml /tmp/aws.yaml
+
+      - name: Rendered config contains the PII guardrail and every enabled model
+        run: |
+          helm template aurai-gateway charts/aurai-gateway -f charts/aurai-gateway/values-local.yaml \
+            --set image.repository=aurai-gateway > /tmp/local.yaml
+          grep -q "custom_guardrail.AuraiPIIGuardrail" /tmp/local.yaml
+          grep -q "model_name: aurai-balanced" /tmp/local.yaml

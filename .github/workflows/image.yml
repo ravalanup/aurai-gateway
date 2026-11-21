@@ -1,0 +1,31 @@
+name: image
+
+on:
+  pull_request:
+    paths:
+      - "Dockerfile"
+      - "src/**"
+      - "config/**"
+      - "pyproject.toml"
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image (not pushed)
+        run: docker build -t aurai-gateway:ci .
+
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: aurai-gateway:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
