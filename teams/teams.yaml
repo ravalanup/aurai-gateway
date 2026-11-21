@@ -1,0 +1,68 @@
+# Teams, budgets, limits and allowed models, as code.
+# Apply with: aurai-teamctl apply teams/teams.yaml --base-url http://localhost:4000
+# All teams are fictional.
+#
+# Fields
+#   team_id          stable identifier (lowercase, digits, hyphens)
+#   alias            display name
+#   risk_tier        T0 to T3; copied into the team's metadata and read by the PII guardrail
+#   owner            accountable owner (role, not a person)
+#   cost_center      for cost reporting
+#   models           model aliases from config/model-catalog.yaml
+#   max_budget_usd   spend limit per budget period
+#   budget_duration  LiteLLM duration string such as 30d
+#   rpm / tpm        requests and tokens per minute
+
+defaults:
+  budget_duration: 30d
+
+teams:
+  - team_id: sandbox
+    alias: Sandbox
+    risk_tier: T0
+    owner: Platform product manager
+    cost_center: CC-1000
+    models: [aurai-fast, aurai-balanced, aurai-gemini-fast, aurai-local]
+    max_budget_usd: 25
+    rpm: 30
+    tpm: 40000
+
+  - team_id: internal-help
+    alias: Internal Help Assistant
+    risk_tier: T1
+    owner: Employee services lead
+    cost_center: CC-2100
+    models: [aurai-fast, aurai-balanced, aurai-reasoning, aurai-embed]
+    max_budget_usd: 400
+    rpm: 120
+    tpm: 150000
+
+  - team_id: ops-insights
+    alias: Operations Insights
+    risk_tier: T2
+    owner: Park operations analytics lead
+    cost_center: CC-3200
+    models: [aurai-balanced, aurai-reasoning, aurai-gemini-pro, aurai-embed]
+    max_budget_usd: 1500
+    rpm: 200
+    tpm: 300000
+
+  - team_id: finance-reporting
+    alias: Finance Reporting
+    risk_tier: T2
+    owner: Finance systems manager
+    cost_center: CC-4100
+    models: [aurai-balanced, aurai-reasoning, aurai-embed]
+    max_budget_usd: 900
+    rpm: 100
+    tpm: 200000
+
+  - team_id: guest-assistant
+    alias: Guest Assistant
+    risk_tier: T3
+    owner: Guest experience product lead
+    cost_center: CC-5300
+    models: [aurai-fast, aurai-balanced, aurai-gemini-fast, aurai-gemini-pro, aurai-embed]
+    max_budget_usd: 5000
+    rpm: 600
+    tpm: 800000

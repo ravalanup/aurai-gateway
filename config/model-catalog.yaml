@@ -1,0 +1,75 @@
+# Approved model catalog (see aurai-docs: governance/data-and-pii-principles.md, "Vendors and models").
+#
+# Only models listed here are exposed by the gateway. Each entry records the provider, where it runs,
+# the data-handling terms assumed, and the risk tiers it may serve. CI checks that:
+#   - every model in charts/aurai-gateway/values.yaml appears here, and the reverse
+#   - every team in teams/teams.yaml only uses models that permit the team's tier
+#   - every fallback permits at least the tiers of the model it backs up
+#
+# Model aliases are what applications call. Provider model names live only in the chart values, so a
+# provider change does not touch application code.
+
+models:
+  - alias: aurai-fast
+    purpose: Low-latency drafting, classification, extraction
+    provider: anthropic
+    tiers: [T0, T1, T2, T3]
+    data_handling: Commercial API terms; no training on customer data (assumed for this prototype)
+    region: provider default
+    fallback: aurai-gemini-fast
+
+  - alias: aurai-balanced
+    purpose: General reasoning, summarization, tool use
+    provider: anthropic
+    tiers: [T0, T1, T2, T3]
+    data_handling: Commercial API terms; no training on customer data (assumed for this prototype)
+    region: provider default
+    fallback: aurai-gemini-pro
+
+  - alias: aurai-reasoning
+    purpose: Complex multi-step analysis and planning
+    provider: anthropic
+    tiers: [T1, T2, T3]
+    data_handling: Commercial API terms; no training on customer data (assumed for this prototype)
+    region: provider default
+    fallback: aurai-balanced
+
+  - alias: aurai-gemini-fast
+    purpose: Fallback and cost-optimized alternative to aurai-fast
+    provider: gemini
+    tiers: [T0, T1, T2, T3]
+    data_handling: Enterprise API terms; no training on customer data (assumed for this prototype)
+    region: provider default
+    fallback: aurai-fast
+
+  - alias: aurai-gemini-pro
+    purpose: Fallback and long-context alternative to aurai-balanced
+    provider: gemini
+    tiers: [T0, T1, T2, T3]
+    data_handling: Enterprise API terms; no training on customer data (assumed for this prototype)
+    region: provider default
+    fallback: aurai-balanced
+
+  - alias: aurai-openai-mini
+    purpose: Optional third provider for comparison and cost routing
+    provider: openai
+    tiers: [T0, T1]
+    data_handling: Not yet reviewed for confidential data; limited to lower tiers
+    region: provider default
+    optional: true
+
+  - alias: aurai-local
+    purpose: Keyless local model for development and offline demos
+    provider: ollama
+    tiers: [T0]
+    data_handling: Runs inside the cluster; nothing leaves the platform
+    region: in-cluster
+    optional: true
+
+  - alias: aurai-embed
+    purpose: Embeddings for retrieval (used by aurai-knowledge-rag)
+    provider: ollama
+    tiers: [T0, T1, T2, T3]
+    data_handling: Runs inside the cluster; nothing leaves the platform
+    region: in-cluster
+    optional: true
